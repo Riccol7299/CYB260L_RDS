@@ -1,14 +1,111 @@
+# Description of what this change includes
+# Revision number
+# Date
+
 AWSTemplateFormatVersion: "2010-09-09"
-Description: Amazon Relational Database Service (RDS) Instance Template
+Description: >
+  CloudFormation template to create a VPC named VPC-7299 in the US-West-2 region,
+  spanning at least 3 Availability Zones, along with an RDS MySQL instance.
+
+Parameters:
+  VpcCIDR:
+    Type: String
+    Default: "10.0.0.0/16"
+    Description: CIDR block for the VPC
+
+  DBPassword:
+    NoEcho: true
+    Type: String
+    MinLength: 8
+    Description: The database admin account password
+
 Resources:
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: VPC-7299
+
+  Subnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: "10.0.1.0/24"
+      AvailabilityZone: !Select [ 0, !GetAZs us-west-2 ]
+      Tags:
+        - Key: Name
+          Value: Subnet-AZ1
+
+  Subnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: "10.0.2.0/24"
+      AvailabilityZone: !Select [ 1, !GetAZs us-west-2 ]
+      Tags:
+        - Key: Name
+          Value: Subnet-AZ2
+
+  Subnet3:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: "10.0.3.0/24"
+      AvailabilityZone: !Select [ 2, !GetAZs us-west-2 ]
+      Tags:
+        - Key: Name
+          Value: Subnet-AZ3
+
+  MySecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable MySQL access
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0  # WARNING: Open to the world. Lock down in production!
+      Tags:
+        - Key: Name
+          Value: MySQLAccessSG
+
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS
+      SubnetIds:
+        - !Ref Subnet1
+        - !Ref Subnet2
+        - !Ref Subnet3
+      Tags:
+        - Key: Name
+          Value: RDSSubnetGroup
+
   RdsInstance:
     Type: AWS::RDS::DBInstance
     Properties:
-      VPCSecurityGroups:
-      - <SECURITY-GROUP-ID>
-      AllocatedStorage: '5'
-      DBInstanceClass: db.t3.micro
       DBInstanceIdentifier: playground-db
+      AllocatedStorage: 20
+      DBInstanceClass: db.t3.micro
       Engine: MySQL
-      MasterUsername: Admin
-      MasterUserPassword: CloudAcademy123!
+      MasterUsername: admin
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups:
+        - !Ref MySecurityGroup
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      PubliclyAccessible: true  # Only if you need to access from internet
+      MultiAZ: false
+
+Outputs:
+  VpcId:
+    Description: VPC ID
+    Value: !Ref MyVPC
+
+  RDSInstanceEndpoint:
+    Description: RDS Endpoint
+    Value: !GetAtt RdsInstance.Endpoint.Address
